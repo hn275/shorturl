@@ -1,0 +1,33 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Short URLs</title>
+    <link rel="stylesheet" href="assets/reset.css" />
+    <link rel="stylesheet" href="assets/global.css" />
+  </head>
+  <body id="home">
+    <header>
+      <h1 class="heading1">Short URL</h1>
+      <p>A URL shortener written in Go and pure HTML/CSS/JS!</p>
+      <a target="_blank" href="https://github.com/hn275/shorturl"
+        >GitHub repository</a
+      >
+    </header>
+
+    <main class="container">
+      <div class="container-generated">
+        Generated URL:
+        <a id="generated-url" href="{{ .GeneratedURL }}" target="_blank"
+          >{{ .GeneratedURL }}</a
+        >
+      </div>
+      <button>Copy to clipboard</button>
+    </main>
+  </body>
+
+  <style>
+    .container-generated {
+      width: max-content;
+    }
+  </style>
+</html>
