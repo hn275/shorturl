@@ -33,8 +33,8 @@ func Connect(dbName string) (*DB, error) {
     );
     `
 	if _, err = sqlite3DB.Exec(schemas); err != nil {
-        return nil, err
-    }
+		return nil, err
+	}
 
 	db = &DB{sqlite3DB}
 	return db, nil
@@ -62,4 +62,9 @@ func (db *DB) InsertURL(url string) (encode.ID, error) {
 	err = db.Get(&id, q, url)
 	return id, err
 
+}
+
+func (db *DB) GetURL(id encode.ID) (string, error) {
+    var url string
+    return url, db.Get(&url, "SELECT url from urls WHERE id = ?;", id)
 }

@@ -17,7 +17,7 @@
     <main class="container">
       <form method="post" action="/generate">
         <input required name="url" type="url" placeholder="https://foo.bar" />
-        <button type="submit">Generate</button>
+        <button type="submit" class="btn">Generate</button>
       </form>
     </main>
   </body>
@@ -26,9 +26,15 @@
     form {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 16px;
       flex-direction: column;
       justify-content: center;
+    }
+
+    input {
+      padding: 12px;
+      border-radius: 8px;
+      border: solid 1px #888888;
     }
 
     form button {

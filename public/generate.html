@@ -21,7 +21,7 @@
           ><span id="host"
         /></a>
       </div>
-      <button id="copy" onclick="handleClick()">Copy to clipboard</button>
+      <button class="btn" onclick="handleClick()">Copy to clipboard</button>
     </main>
   </body>
 
@@ -36,7 +36,11 @@
   var aTag = document.getElementById("generated-url");
   aTag.innerText = aTag.href;
 
+  function alertUser() {
+    window.alert(`Copied URL ${aTag.href} to clipboard.`);
+  }
+
   function handleClick() {
-    window.navigator.clipboard.writeText(aTag.href);
+    window.navigator.clipboard.writeText(aTag.href).then(alertUser);
   }
 </script>

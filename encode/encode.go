@@ -1,30 +1,50 @@
 package encode
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"strings"
+)
 
 type ID = uint32
 
 const (
-	table     string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	tableLen uint8  = uint8(len(table))
+	table string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+)
+
+var (
+	encodedLen uint8 = uint8(math.Ceil(math.Log(float64(1<<32-1)) / math.Log(float64(tableLen))))
+	tableLen   uint8 = uint8(len(table))
 )
 
 func Encode(id ID) string {
-	i := uint16(math.Log(float64(id)) / math.Log(float64(tableLen)))
-	out := make([]byte, i+1)
+	out := make([]byte, encodedLen)
 	l := ID(tableLen)
-	for ; i != 0; i-- {
+	i := 0
+	for ; id >= l; i++ {
 		idx := id % l
 		out[i] = table[idx]
 		id /= l
 	}
-
 	// the last one
 	idx := id % l
 	out[i] = table[idx]
-	return string(out)
+	return string(out[:i+1])
 }
 
-func Decode(digest string) int64 {
-	return 0
+func Decode(encodedID string) (ID, error) {
+	var id ID = 0
+	for i, char := range encodedID {
+		index := strings.IndexRune(table, char)
+		if index == -1 {
+			break
+		}
+		id += ID(index) * ID(math.Pow(float64(tableLen), float64(i)))
+	}
+
+	if id == 0 {
+		return id, fmt.Errorf("failed to decode id %s", encodedID)
+	}
+
+	return id, nil
 }

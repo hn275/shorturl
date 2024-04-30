@@ -33,3 +33,19 @@ header h1 {
     align-items: center;
     gap: 8px;
 }
+
+.btn {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #888888;
+    background: white;
+    transition: all 150ms ease-in-out;
+    font-weight: bold;
+}
+
+.btn:hover {
+    cursor: pointer;
+    border: 1px solid #000000;
+    background: #000000;
+    color: white;
+}

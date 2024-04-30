@@ -21,9 +21,9 @@ func main() {
 
 	type h = http.HandlerFunc
 	http.Handle("/assets/", handleAssets)
-	http.Handle("/index.html", handleHome())
+	http.Handle("/index.html", h(handleHome))
 	http.Handle("/generate", h(handleGenerate))
-	http.Handle("/", handleParams())
+	http.Handle("/", h(handleParams))
 
 	port := envOrElse("PORT", "3000")
 	log.Println("Listening on port:", port)
@@ -69,6 +69,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Add("Cache-Control", "no-cache")
 	if err := tmpl.Execute(w, data); err != nil {
 		stderr("failed to execute templating:\n%v", err)
 	}
@@ -77,47 +78,68 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 var handleAssets = http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))
 
-func handleHome() http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t, err := template.ParseFiles("public/index.html")
-		if err != nil {
-			stderr("Failed to parse index.html: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		if err := t.Execute(w, nil); err != nil {
-			stderr("failed to write template to response: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	})
+func handleHome(w http.ResponseWriter, r *http.Request) {
+	buf, err := os.ReadFile("public/index.html")
+	if err != nil {
+		stderr("Failed to parse index.html: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Cache-Control", "no-cache")
+	w.Header().Add("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(buf); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 }
 
-func handleParams() http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+func handleParams(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
-		if r.URL.String() == "/" {
-			http.Redirect(w, r, "/index.html", http.StatusPermanentRedirect)
-			return
-		}
-		idEncoded := r.URL.String()[1:]
-		fmt.Println(idEncoded)
-		w.WriteHeader(http.StatusOK)
-	})
+	// redirecting
+	if r.URL.String() == "/" {
+		w.Header().Add("Cache-Control", "no-cache")
+		http.Redirect(w, r, "/index.html", http.StatusPermanentRedirect)
+		return
+	}
+
+	if r.URL.String() == "/favicon.ico" {
+		w.Header().Add("Cache-Control", "no-cache")
+		http.Redirect(w, r, "/assets/favicon.ico", http.StatusPermanentRedirect)
+		return
+	}
+
+	// decode url
+	id, err := encode.Decode(r.URL.String()[1:])
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// get url from db
+	db := database.New()
+	url, err := db.GetURL(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.Header().Add("Cache-Control", "no-cache")
+	http.Redirect(w, r, url, http.StatusPermanentRedirect)
 }
 
 func writeError(w http.ResponseWriter, httpCode int, msg string) {
+	w.Header().Add("Content-Type", "text/plain")
+	w.WriteHeader(httpCode)
 	if _, err := w.Write([]byte(msg)); err != nil {
 		stderr("error writing response: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Header().Add("Content-Type", "text/plain")
-	w.WriteHeader(httpCode)
 }
 
 func stderr(format string, args ...any) {
