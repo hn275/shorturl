@@ -17,11 +17,11 @@
     <main class="container">
       <div class="container-generated">
         Generated URL:
-        <a id="generated-url" href="{{ .GeneratedURL }}" target="_blank"
-          >{{ .GeneratedURL }}</a
-        >
+        <a id="generated-url" href="/{{ .GeneratedHash }}" target="_blank"
+          ><span id="host"
+        /></a>
       </div>
-      <button>Copy to clipboard</button>
+      <button id="copy" onclick="handleClick()">Copy to clipboard</button>
     </main>
   </body>
 
@@ -31,3 +31,12 @@
     }
   </style>
 </html>
+
+<script>
+  var aTag = document.getElementById("generated-url");
+  aTag.innerText = aTag.href;
+
+  function handleClick() {
+    window.navigator.clipboard.writeText(aTag.href);
+  }
+</script>

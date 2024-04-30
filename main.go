@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
 
@@ -12,9 +13,42 @@ import (
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
+const (
+	ENCODE_TABLE     string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	ENCODE_TABLE_LEN uint8  = uint8(len(ENCODE_TABLE))
+)
+
+var (
+	encoder = Encoder{}
+)
+
+type ID = uint32
+
+type Encoder struct{}
+
+func (e *Encoder) Encode(id ID) string {
+	i := uint16(math.Log(float64(id)) / math.Log(float64(ENCODE_TABLE_LEN)))
+	out := make([]byte, i+1)
+	l := ID(ENCODE_TABLE_LEN)
+	for ; i != 0; i-- {
+		idx := id % l
+		out[i] = ENCODE_TABLE[idx]
+		id /= l
+	}
+
+	// the last one
+	idx := id % l
+	out[i] = ENCODE_TABLE[idx]
+	return string(out)
+}
+
+func (e *Encoder) Decode(digest string) int64 {
+	return 0
+}
+
 func main() {
 	// db
-	db, err := databaseConnect("database.db")
+	db, err := databaseConnect(envOrElse("SQLITE_PATH", "database.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,7 +58,10 @@ func main() {
 	http.Handle("/index.html", handleHome())
 	http.Handle("/generate", handleGenerate(db))
 	http.Handle("/", handleParams())
-	log.Fatal(http.ListenAndServe(":3000", nil))
+
+	port := envOrElse("PORT", "3000")
+	log.Println("Listening on port:", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
 func handleGenerate(db *sqlx.DB) http.HandlerFunc {
@@ -57,7 +94,7 @@ func handleGenerate(db *sqlx.DB) http.HandlerFunc {
 			urlExists = true
 		}
 
-		var id int64
+		var id ID
 		if urlExists {
 			q := "SELECT id FROM urls WHERE url = ?;"
 			if err := db.Get(&id, q, url); err != nil {
@@ -65,17 +102,19 @@ func handleGenerate(db *sqlx.DB) http.HandlerFunc {
 			}
 		} else {
 			var err error
-			id, err = result.LastInsertId()
+			_id, err := result.LastInsertId()
 			if err != nil {
 				log.Fatal(err)
 			}
+			id = ID(_id)
 		}
 
 		// id -> string
-		fmt.Println(id)
 		data := struct {
-			GeneratedURL string `db:"url"`
-		}{}
+			GeneratedHash string
+		}{
+			GeneratedHash: encoder.Encode(id),
+		}
 
 		// response
 		tmpl, err := template.ParseFiles("public/generate.html")
@@ -85,7 +124,9 @@ func handleGenerate(db *sqlx.DB) http.HandlerFunc {
 			return
 		}
 
-		tmpl.Execute(w, data)
+		if err := tmpl.Execute(w, data); err != nil {
+			stderr("failed to execute templating:\n%v", err)
+		}
 	})
 
 }
@@ -123,15 +164,15 @@ func databaseConnect(dbName string) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Println("connecting to database:", dbName)
 	schemas := `
     CREATE TABLE IF NOT EXISTS urls (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT NOT NULL UNIQUE
     );
     `
-	if _, err := db.Exec(schemas); err != nil {
-		return nil, err
-	}
+	db.MustExec(schemas)
+	log.Println("database migrated")
 	return db, nil
 }
 
@@ -151,4 +192,13 @@ func stderr(format string, args ...any) {
 	if _, err := os.Stderr.WriteString(msg); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func envOrElse(k string, defaultValue string) string {
+	v := os.Getenv(k)
+	if v == "" {
+		log.Printf("Environment variable `%s` not set, using default `%s`\n", k, defaultValue)
+		return defaultValue
+	}
+	return v
 }
