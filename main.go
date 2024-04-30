@@ -151,10 +151,17 @@ func handleHome() http.HandlerFunc {
 
 func handleParams() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
 		if r.URL.String() == "/" {
 			http.Redirect(w, r, "/index.html", http.StatusPermanentRedirect)
 			return
 		}
+		idEncoded := r.URL.String()[1:]
+		fmt.Println(idEncoded)
 		w.WriteHeader(http.StatusOK)
 	})
 }
