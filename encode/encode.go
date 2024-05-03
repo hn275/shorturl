@@ -36,6 +36,7 @@ func Encode(id ID) string {
 func Decode(encodedID string) (ID, error) {
 	var id ID = 0
 	for i, char := range encodedID {
+        // TODO: optimize this index, math it out from the ascii table
 		index := strings.IndexRune(table, char)
 		if index == -1 {
 			break
