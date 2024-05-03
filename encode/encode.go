@@ -10,26 +10,27 @@ type ID = uint32
 
 const (
 	table string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	maxID uint32 = 0xffffffff
 )
 
 var (
-	encodedLen uint8 = uint8(math.Ceil(math.Log(float64(1<<32-1)) / math.Log(float64(tableLen))))
 	tableLen   uint8 = uint8(len(table))
+	encodedLen uint8 = uint8(math.Ceil(math.Log(float64(maxID)) / math.Log(float64(tableLen))))
 )
 
 func Encode(id ID) string {
 	buf := make([]byte, encodedLen)
-	l := ID(tableLen)
+	base := ID(tableLen)
 	i := 0
-	for ; id >= l; i++ {
-		idx := id % l
-		buf[i] = table[idx]
-		id /= l
+	for {
+		buf[i] = table[id%base]
+		i++
+		id /= base
+		if id == 0 {
+			break
+		}
 	}
-	// the last one
-	idx := id % l
-	buf[i] = table[idx]
-	return string(buf[:i+1])
+	return string(buf[:i])
 }
 
 func Decode(encodedID string) (ID, error) {

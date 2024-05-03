@@ -9,11 +9,8 @@ import (
 
 func TestEncodeDecode(t *testing.T) {
 	// technically the id is uint32, but looping from
-	// 0 to 1 << 32-1 takes a really long time
-	for i := range 1 << 16 {
-		if i == 0 { // since id will never be 0
-			continue
-		}
+	// 0 to 1 << 0xffffffff takes a really long time
+	for i := 1; i < 0xffff; i++ {
 		id := encode.ID(i)
 		enc := encode.Encode(id)
 		dec, err := encode.Decode(enc)
@@ -21,7 +18,7 @@ func TestEncodeDecode(t *testing.T) {
 		assert.Equal(t, id, dec)
 	}
 
-	p := encode.ID(1<<32 - 1)
+	p := encode.ID(0xffffffff)
 	encodedStr := encode.Encode(p)
 	decoded, err := encode.Decode(encodedStr)
 	assert.Nil(t, err)
