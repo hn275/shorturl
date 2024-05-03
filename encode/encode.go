@@ -18,18 +18,18 @@ var (
 )
 
 func Encode(id ID) string {
-	out := make([]byte, encodedLen)
+	buf := make([]byte, encodedLen)
 	l := ID(tableLen)
 	i := 0
 	for ; id >= l; i++ {
 		idx := id % l
-		out[i] = table[idx]
+		buf[i] = table[idx]
 		id /= l
 	}
 	// the last one
 	idx := id % l
-	out[i] = table[idx]
-	return string(out[:i+1])
+	buf[i] = table[idx]
+	return string(buf[:i+1])
 }
 
 func Decode(encodedID string) (ID, error) {
