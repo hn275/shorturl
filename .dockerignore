@@ -1,2 +1,6 @@
 database.db
 docker-compose.yml
+Makefile
+/etc
+/.git
+.gitignore

@@ -1,10 +1,16 @@
-FROM golang:1.22.2-bullseye AS build
-WORKDIR /shorturl
-COPY . .
-RUN go mod tidy
-RUN go build -o bin/shorturl main.go
+ARG GO_VERSION=1
+FROM golang:${GO_VERSION}-bookworm as builder
 
-FROM debian:bullseye
-WORKDIR /shorturl
-COPY --from=build /shorturl/bin/shorturl /bin/shorturl
-CMD ["/bin/shorturl"]
+WORKDIR /usr/src/app
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+COPY . .
+RUN go build -v -o /run-app .
+
+
+FROM debian:bookworm
+
+COPY --from=builder /run-app /app
+COPY /public /public
+COPY /assets /assets
+CMD ["/app"]
