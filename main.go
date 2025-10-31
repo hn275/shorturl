@@ -19,15 +19,18 @@ func main() {
 	}
 	defer db.Close()
 
+	// mux
+	r := makeRouter()
+
 	type h = http.HandlerFunc
-	http.Handle("/assets/", handleAssets)
-	http.Handle("/index.html", h(handleHome))
-	http.Handle("/generate", h(handleGenerate))
-	http.Handle("/", h(handleParams))
+	r.Handle("/assets/", handleAssets)
+	r.Handle("/index.html", h(handleHome))
+	r.Handle("/generate", h(handleGenerate))
+	r.Handle("/", h(handleParams))
 
 	port := envOrElse("PORT", "3000")
 	log.Println("Listening on port:", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, r))
 }
 
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
