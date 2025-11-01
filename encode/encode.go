@@ -1,52 +1,53 @@
 package encode
 
 import (
+	"encoding/base64"
 	"fmt"
-	"math"
-	"strings"
+	"slices"
+	"strconv"
 )
 
-type ID = uint32
+type (
+	ID    = string
+	Nonce = [NonceSize]byte
+)
 
 const (
-	table string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	maxID uint32 = 0xffffffff
+	NonceSize = 8
 )
 
 var (
-	tableLen   uint8 = uint8(len(table))
-	encodedLen uint8 = uint8(math.Ceil(math.Log(float64(maxID)) / math.Log(float64(tableLen))))
+	encoding = base64.RawURLEncoding
+
+	EncodeToString = encoding.EncodeToString
+	DecodeString   = encoding.DecodeString
 )
 
-func Encode(id ID) string {
-	buf := make([]byte, encodedLen)
-	base := ID(tableLen)
-	i := 0
-	for {
-		buf[i] = table[id%base]
-		i++
-		id /= base
-		if id == 0 {
-			break
-		}
-	}
-	return string(buf[:i])
+func Encode(id uint64, nonce Nonce) string {
+	idStr := strconv.Itoa(int(id))
+	buf := slices.Concat(nonce[:], []byte(idStr))
+	return EncodeToString(buf)
 }
 
-func Decode(encodedID string) (ID, error) {
-	var id ID = 0
-	for i, char := range encodedID {
-        // TODO: optimize this index, math it out from the ascii table
-		index := strings.IndexRune(table, char)
-		if index == -1 {
-			break
-		}
-		id += ID(index) * ID(math.Pow(float64(tableLen), float64(i)))
+func Decode(encodedID string) (uint64, Nonce, error) {
+	raw, err := DecodeString(encodedID)
+	if err != nil {
+		return 0, Nonce{}, fmt.Errorf("failed to decode raw id: %w", err)
 	}
 
-	if id == 0 {
-		return id, fmt.Errorf("failed to decode id %s", encodedID)
+	idStr, nonceRaw := raw[NonceSize:], raw[:NonceSize]
+
+	if len(nonceRaw) != NonceSize {
+		return 0, Nonce{}, fmt.Errorf("invalid nonce")
 	}
 
-	return id, nil
+	var nonce Nonce
+	copy(nonce[:], nonceRaw)
+
+	id, err := strconv.Atoi(string(idStr))
+	if err != nil {
+		return 0, Nonce{}, fmt.Errorf("failed to decode id: %w", err)
+	}
+
+	return uint64(id), nonce, nil
 }

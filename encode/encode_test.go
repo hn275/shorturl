@@ -1,6 +1,8 @@
 package encode_test
 
 import (
+	"crypto/rand"
+	"io"
 	"testing"
 
 	"github.com/hn275/shorturl/encode"
@@ -8,19 +10,22 @@ import (
 )
 
 func TestEncodeDecode(t *testing.T) {
-	// technically the id is uint32, but looping from
-	// 0 to 1 << 0xffffffff takes a really long time
-	for i := 1; i < 0xffff; i++ {
-		id := encode.ID(i)
-		enc := encode.Encode(id)
-		dec, err := encode.Decode(enc)
-		assert.Nil(t, err)
-		assert.Equal(t, id, dec)
-	}
+	const testCtr = 0x10
 
-	p := encode.ID(0xffffffff)
-	encodedStr := encode.Encode(p)
-	decoded, err := encode.Decode(encodedStr)
-	assert.Nil(t, err)
-	assert.Equal(t, p, decoded)
+	for i := range testCtr {
+		id := uint64(i)
+		nonce := encode.Nonce{}
+		if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
+			t.Fatal(err)
+		}
+
+		encoded := encode.Encode(id, nonce)
+		decodedID, decodedNonce, err := encode.Decode(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		assert.Equal(t, id, decodedID, "invalid id")
+		assert.Equal(t, nonce, decodedNonce, "invalid nonce")
+	}
 }

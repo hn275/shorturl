@@ -9,6 +9,11 @@ import (
 
 	"github.com/hn275/shorturl/database"
 	"github.com/hn275/shorturl/encode"
+	"github.com/hn275/shorturl/router"
+)
+
+const (
+	urlLimitLength = 0x800
 )
 
 func main() {
@@ -20,7 +25,7 @@ func main() {
 	defer db.Close()
 
 	// mux
-	r := makeRouter()
+	r := router.New()
 
 	type h = http.HandlerFunc
 	r.Handle("/assets/", handleAssets)
@@ -47,6 +52,9 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	url := r.Form.Get("url")
+	if len(url) > urlLimitLength {
+		writeError(w, http.StatusBadRequest, "url too long")
+	}
 
 	// insert to db
 	db := database.New()
