@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
@@ -46,11 +47,11 @@ func Connect(dbName string) (*DB, error) {
 	return db, nil
 }
 
-func (db *DB) InsertURL(nonce, url string) (uint64, error) {
+func (db *DB) InsertURL(url, nonce string) (uint64, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	result, err := db.Exec("INSERT INTO urls (nonce,url) VALUES (?,?);", nonce, url)
+	result, err := db.Exec("INSERT INTO urls (url,nonce) VALUES (?,?);", url, nonce)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert to database: %w", err)
 	}
@@ -60,6 +61,8 @@ func (db *DB) InsertURL(nonce, url string) (uint64, error) {
 		return 0, fmt.Errorf("failed to get last inserted id: %w", err)
 	}
 
+	slog.Debug("inserting", "url", url, "nonce", nonce, "id", lastInsertID)
+
 	return uint64(lastInsertID), err
 }
 
@@ -67,6 +70,12 @@ func (db *DB) GetURL(id uint64, nonce string) (string, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
+	slog.Debug("querying", "id", id, "nonce", nonce)
+
 	var url string
-	return url, db.Get(&url, "SELECT url from urls WHERE id = ? AND nonce = ?;", id, nonce)
+	if err := db.Get(&url, "SELECT url from urls WHERE id = ? AND nonce = ?;", id, nonce); err != nil {
+		return "", fmt.Errorf("failed query: %w", err)
+	}
+
+	return url, nil
 }

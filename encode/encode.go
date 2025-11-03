@@ -2,9 +2,14 @@ package encode
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
+	"os"
 	"slices"
 	"strconv"
+
+	"lukechampine.com/blake3"
 )
 
 type (
@@ -13,27 +18,57 @@ type (
 )
 
 const (
-	NonceSize = 8
+	NonceSize = 4
+
+	kdfContextString = "ushort 2025-11-03 00:28:17 short url context string"
 )
 
 var (
-	encoding = base64.RawURLEncoding
+	Encoder = base64.RawURLEncoding
 
-	EncodeToString = encoding.EncodeToString
-	DecodeString   = encoding.DecodeString
+	serverSecret = []byte{}
 )
+
+func init() {
+	secretHex, ok := os.LookupEnv("SECRET")
+	if !ok {
+		slog.Error("server SECRET not set")
+		os.Exit(1)
+	}
+
+	var err error
+	serverSecret, err = hex.DecodeString(secretHex)
+	if err != nil {
+		slog.Error("failed to decode server SECRET", "err", err)
+		os.Exit(1)
+	}
+
+	if len(serverSecret) < 32 {
+		slog.Error("weak server secret")
+		os.Exit(1)
+	}
+}
 
 func Encode(id uint64, nonce Nonce) string {
 	idStr := strconv.Itoa(int(id))
 	buf := slices.Concat(nonce[:], []byte(idStr))
-	return EncodeToString(buf)
+
+	subKey := make([]byte, len(buf))
+	blake3.DeriveKey(subKey, kdfContextString, serverSecret)
+	for i := range buf {
+		buf[i] ^= subKey[i]
+	}
+
+	return Encoder.EncodeToString(buf)
 }
 
 func Decode(encodedID string) (uint64, Nonce, error) {
-	raw, err := DecodeString(encodedID)
+	raw, err := Encoder.DecodeString(encodedID)
 	if err != nil {
 		return 0, Nonce{}, fmt.Errorf("failed to decode raw id: %w", err)
 	}
+
+	xorSecret(raw)
 
 	idStr, nonceRaw := raw[NonceSize:], raw[:NonceSize]
 
@@ -50,4 +85,13 @@ func Decode(encodedID string) (uint64, Nonce, error) {
 	}
 
 	return uint64(id), nonce, nil
+}
+
+func xorSecret(buf []byte) []byte {
+	subKey := make([]byte, len(buf))
+	blake3.DeriveKey(subKey, kdfContextString, serverSecret)
+	for i := range buf {
+		buf[i] ^= subKey[i]
+	}
+	return buf
 }

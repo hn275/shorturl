@@ -1,12 +1,16 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
+	"github.com/gorilla/mux"
 	"github.com/hn275/shorturl/database"
 	"github.com/hn275/shorturl/encode"
 	"github.com/hn275/shorturl/router"
@@ -15,6 +19,14 @@ import (
 const (
 	urlLimitLength = 0x800
 )
+
+var handleAssets = http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))
+
+func init() {
+	if os.Getenv("DEBUG") == "1" {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+}
 
 func main() {
 	// db
@@ -28,10 +40,10 @@ func main() {
 	r := router.New()
 
 	type h = http.HandlerFunc
+	r.Handle("/", h(handleHome))
 	r.Handle("/assets/", handleAssets)
-	r.Handle("/index.html", h(handleHome))
 	r.Handle("/generate", h(handleGenerate))
-	r.Handle("/", h(handleParams))
+	r.Handle("/{urlEncoded}", h(handleParams))
 
 	port := envOrElse("PORT", "3000")
 	log.Println("Listening on port:", port)
@@ -54,14 +66,28 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	url := r.Form.Get("url")
 	if len(url) > urlLimitLength {
 		writeError(w, http.StatusBadRequest, "url too long")
+		return
 	}
 
 	// insert to db
+	nonce := encode.Nonce{}
+	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
+		writeError(w, http.StatusInternalServerError, "")
+		slog.Error("failed to make nonce", "err", err)
+		return
+	}
+
+	nonceEncoded := encode.Encoder.EncodeToString(nonce[:])
+
 	db := database.New()
-	id, err := db.InsertURL(url)
+
+	id, err := db.InsertURL(url, nonceEncoded)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		stderr("failed to create a new url: %v", err)
+		writeError(w, http.StatusInternalServerError, "")
+		slog.Error(
+			"failed to insert url to database",
+			"url", url, "nonce", nonce, "err", err,
+		)
 		return
 	}
 
@@ -69,25 +95,23 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		GeneratedHash string
 	}{
-		GeneratedHash: encode.Encode(id),
+		GeneratedHash: encode.Encode(id, nonce),
 	}
 
 	// response
 	tmpl, err := template.ParseFiles("public/generate.html")
 	if err != nil {
-		stderr(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
+		slog.Error("failed to parse template", "err", err)
 		return
 	}
 
 	w.Header().Add("Cache-Control", "no-cache")
 	if err := tmpl.Execute(w, data); err != nil {
-		stderr("failed to execute templating:\n%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		slog.Error("failed to generate template", "err", err)
 	}
-
 }
-
-var handleAssets = http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))
 
 func handleHome(w http.ResponseWriter, r *http.Request) {
 	buf, err := os.ReadFile("public/index.html")
@@ -101,7 +125,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(buf); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("failed to write response", "err", err)
 		return
 	}
 }
@@ -126,17 +150,26 @@ func handleParams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// decode url
-	id, err := encode.Decode(r.URL.String()[1:])
+	vars := mux.Vars(r)
+	encodedUrl, ok := vars["urlEncoded"]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "missing encoded url")
+		return
+	}
+
+	id, nonce, err := encode.Decode(encodedUrl)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// get url from db
+	nonceEncoded := encode.Encoder.EncodeToString(nonce[:])
 	db := database.New()
-	url, err := db.GetURL(id)
+	url, err := db.GetURL(id, nonceEncoded)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "url not found")
+		slog.Error("failed to query URL", "id", id, "nonce", nonceEncoded, "err", err)
 		return
 	}
 	w.Header().Add("Cache-Control", "no-cache")
@@ -146,9 +179,14 @@ func handleParams(w http.ResponseWriter, r *http.Request) {
 func writeError(w http.ResponseWriter, httpCode int, msg string) {
 	w.Header().Add("Content-Type", "text/plain")
 	w.WriteHeader(httpCode)
+
+	if httpCode == http.StatusInternalServerError {
+		slog.Error("server error", "err", msg)
+		return
+	}
+
 	if _, err := w.Write([]byte(msg)); err != nil {
 		stderr("error writing response: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 }

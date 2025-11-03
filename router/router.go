@@ -1,11 +1,12 @@
 package router
 
 import (
-	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/gorilla/mux"
 	"go.uber.org/ratelimit"
 )
@@ -28,19 +29,20 @@ func New() *Router {
 		rwMtx:       &sync.Mutex{},
 	}
 
+	r.Use(r.logger)
 	r.Use(r.rateLimitMiddleware)
 
-	go r.rateLimit()
+	go r.cacheFlush()
 
 	return r
 }
 
-func (r *Router) rateLimit() {
+func (r *Router) cacheFlush() {
 	t := time.NewTicker(time.Minute)
 
 	for {
 		<-t.C
-		fmt.Println("rate limit ticker event!")
+		slog.Debug("rate limiter cache flush tick")
 
 		now := time.Now()
 
@@ -48,16 +50,47 @@ func (r *Router) rateLimit() {
 
 		for sym := range r.rateLimiter {
 			s := r.rateLimiter[sym]
-			fmt.Println(sym, s.lastRead)
-
 			if s.lastRead.Add(time.Minute).Before(now) {
 				delete(r.rateLimiter, sym)
-				fmt.Println("expired, deleting session:", sym)
+				slog.Debug("removed expiring session", "addr", sym, "last-read", s.lastRead)
 			}
 		}
 
 		r.rwMtx.Unlock()
 	}
+}
+
+type responseWriterWrapper struct {
+	http.ResponseWriter
+	responseCode    int
+	responseBodyLen int
+}
+
+func (w *responseWriterWrapper) WriteHeader(code int) {
+	w.ResponseWriter.WriteHeader(code)
+	w.responseCode = code
+}
+
+func (w *responseWriterWrapper) Write(d []byte) (int, error) {
+	var err error
+	w.responseBodyLen, err = w.ResponseWriter.Write(d)
+	return w.responseBodyLen, err
+}
+
+func (m *Router) logger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ww := &responseWriterWrapper{w, 0, 0}
+		now := time.Now()
+		next.ServeHTTP(ww, r)
+		duration := time.Since(now)
+		slog.Info(
+			"request served.",
+			"url", r.URL.String(),
+			"time", duration.String(),
+			"code", ww.responseCode,
+			"size", humanize.Bytes(uint64(ww.responseBodyLen)),
+		)
+	})
 }
 
 func (m *Router) rateLimitMiddleware(next http.Handler) http.Handler {

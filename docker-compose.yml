@@ -1,17 +1,8 @@
 services:
-  shorturl:
-    image: hn275/shorturl
-    container_name: "shorturl-app"
+  ushort:
+    build: .
+    container_name: "ushort"
     environment:
       - PORT=3000
-
-  nginx:
-    image: nginx
-    container_name: "shorturl-nginx"
     ports:
-      - 80:80
-      - 443:443
-    volumes:
-      - ./etc/nginx/:/etc/nginx/
-    links:
-      - "shorturl:app"
+      - 3000:3000
