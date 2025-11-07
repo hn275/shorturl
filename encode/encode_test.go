@@ -26,21 +26,7 @@ func TestEncodeDecode(t *testing.T) {
 
 		assert.Equal(t, id, decodedID, "invalid id")
 		assert.Equal(t, nonce, decodedNonce, "invalid nonce")
+
+		t.Logf("id: %d\n\tnonce: %x\n\tencoded: %s", id, nonce, encoded)
 	}
-}
-
-func TestXorServerSecret(t *testing.T) {
-	buf := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
-		t.Fatal(err)
-	}
-
-	bufCpy := make([]byte, len(buf))
-	copy(bufCpy, buf)
-
-	xorSecret(bufCpy)
-	assert.NotEqual(t, buf, bufCpy)
-
-	xorSecret(bufCpy)
-	assert.Equal(t, buf, bufCpy)
 }

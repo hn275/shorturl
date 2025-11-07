@@ -2,12 +2,12 @@ package encode
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
 	"slices"
-	"strconv"
 
 	"lukechampine.com/blake3"
 )
@@ -27,6 +27,7 @@ var (
 	Encoder = base64.RawURLEncoding
 
 	serverSecret = []byte{}
+	binEncoder   = binary.LittleEndian
 )
 
 func init() {
@@ -50,12 +51,19 @@ func init() {
 }
 
 func Encode(id uint64, nonce Nonce) string {
-	idStr := strconv.Itoa(int(id))
-	buf := slices.Concat(nonce[:], []byte(idStr))
+	buf := make([]byte, 8+NonceSize)
+	binEncoder.PutUint64(buf[:8], id)
 
-	subKey := make([]byte, len(buf))
-	blake3.DeriveKey(subKey, kdfContextString, serverSecret)
-	for i := range buf {
+	copy(buf[8:], nonce[:])
+
+	subKey := make([]byte, 8)
+	blake3.DeriveKey(
+		subKey,
+		kdfContextString,
+		slices.Concat(serverSecret, nonce[:]),
+	)
+
+	for i := range subKey {
 		buf[i] ^= subKey[i]
 	}
 
@@ -68,30 +76,22 @@ func Decode(encodedID string) (uint64, Nonce, error) {
 		return 0, Nonce{}, fmt.Errorf("failed to decode raw id: %w", err)
 	}
 
-	xorSecret(raw)
+	nonce := Nonce{}
+	copy(nonce[:], raw[8:])
 
-	idStr, nonceRaw := raw[NonceSize:], raw[:NonceSize]
+	subKey := make([]byte, 8)
 
-	if len(nonceRaw) != NonceSize {
-		return 0, Nonce{}, fmt.Errorf("invalid nonce")
+	blake3.DeriveKey(
+		subKey,
+		kdfContextString,
+		slices.Concat(serverSecret, nonce[:]),
+	)
+
+	for i := range subKey {
+		raw[i] ^= subKey[i]
 	}
 
-	var nonce Nonce
-	copy(nonce[:], nonceRaw)
+	id := binEncoder.Uint64(raw[:8])
 
-	id, err := strconv.Atoi(string(idStr))
-	if err != nil {
-		return 0, Nonce{}, fmt.Errorf("failed to decode id: %w", err)
-	}
-
-	return uint64(id), nonce, nil
-}
-
-func xorSecret(buf []byte) []byte {
-	subKey := make([]byte, len(buf))
-	blake3.DeriveKey(subKey, kdfContextString, serverSecret)
-	for i := range buf {
-		buf[i] ^= subKey[i]
-	}
-	return buf
+	return id, nonce, nil
 }
