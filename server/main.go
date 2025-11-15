@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"log/slog"
@@ -31,7 +30,7 @@ func init() {
 
 func main() {
 	// db
-	db, err := database.Connect(envOrElse("SQLITE_PATH", "database.db"))
+	db, err := database.Connect(envOrElse("SQLITE_PATH", "/tmp/database.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,10 +39,12 @@ func main() {
 	// mux
 	r := router.New()
 
+	r.HandleFunc("/api/qrcode", handleQr).Methods(http.MethodGet)
+	r.HandleFunc("/api/shorturl", handleUrl).Methods(http.MethodPost)
+
 	type h = http.HandlerFunc
 	r.Handle("/", h(handleHome))
 	r.Handle("/assets/", handleAssets)
-	r.Handle("/generate", h(handleGenerate))
 	r.Handle("/{urlEncoded}", h(handleParams))
 
 	port := envOrElse("PORT", "8000")
@@ -51,20 +52,10 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, handlers.LoggingHandler(os.Stdout, r)))
 }
 
-func handleGenerate(w http.ResponseWriter, r *http.Request) {
-	// user input validation
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
+func handleQr(w http.ResponseWriter, r *http.Request) {}
 
-	if err := r.ParseForm(); err != nil {
-		stderr("parse form error: %v", err)
-		writeError(w, http.StatusBadRequest, "failed to parse url encoded form")
-		return
-	}
-
-	url := r.Form.Get("url")
+func handleUrl(w http.ResponseWriter, r *http.Request) {
+	url := r.URL.Query().Get("url")
 	if len(url) > urlLimitLength {
 		writeError(w, http.StatusBadRequest, "url too long")
 		return
@@ -92,26 +83,13 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// id -> string
-	data := struct {
-		GeneratedHash string
-	}{
-		GeneratedHash: encode.Encode(id, nonce),
-	}
+	generatedHash := encode.Encode(id, nonce)
 
 	// response
-	tmpl, err := template.ParseFiles("public/generate.html")
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		slog.Error("failed to parse template", "err", err)
-		return
-	}
-
 	w.Header().Add("Cache-Control", "no-cache")
-	if err := tmpl.Execute(w, data); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		slog.Error("failed to generate template", "err", err)
-	}
+	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte(generatedHash))
 }
 
 func handleHome(w http.ResponseWriter, r *http.Request) {

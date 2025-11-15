@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/gorilla/mux"
 	"go.uber.org/ratelimit"
 )
@@ -29,7 +28,6 @@ func New() *Router {
 		rwMtx:       &sync.Mutex{},
 	}
 
-	r.Use(r.logger)
 	r.Use(r.rateLimitMiddleware)
 
 	go r.cacheFlush()
@@ -75,22 +73,6 @@ func (w *responseWriterWrapper) Write(d []byte) (int, error) {
 	var err error
 	w.responseBodyLen, err = w.ResponseWriter.Write(d)
 	return w.responseBodyLen, err
-}
-
-func (m *Router) logger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ww := &responseWriterWrapper{w, 0, 0}
-		now := time.Now()
-		next.ServeHTTP(ww, r)
-		duration := time.Since(now)
-		slog.Info(
-			"request served.",
-			"url", r.URL.String(),
-			"time", duration.String(),
-			"code", ww.responseCode,
-			"size", humanize.Bytes(uint64(ww.responseBodyLen)),
-		)
-	})
 }
 
 func (m *Router) rateLimitMiddleware(next http.Handler) http.Handler {
